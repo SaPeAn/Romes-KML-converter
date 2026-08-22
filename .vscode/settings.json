@@ -1,0 +1,18 @@
+{
+    "terminal.integrated.focusAfterRun": "terminal",
+    "code-runner.executorMap": {"c": "cd $dir && cd ../ && gcc -std=c99 src/*.c -o RomesKML_converter && ./RomesKML_converter"},
+    "makefile.configureOnOpen": true,
+    "files.autoSave": "afterDelay",
+    "code-runner.runInTerminal": true,
+    "files.associations": {
+        "stdlib.h": "c",
+        "main.h": "c",
+        "datatypes.h": "c",
+        "stdio.h": "c",
+        "kml_struct.h": "c",
+        "typeinfo": "c",
+        "open_file.h": "c",
+        "save_file.h": "c"
+    },
+    "files.encoding": "windows1251"
+}
