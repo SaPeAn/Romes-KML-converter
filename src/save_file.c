@@ -318,6 +318,111 @@ void savecsvcovchart(char *filename, folder_t *folder, int folder_quantity)
      now come from the same pass: both from the averaged coverage.  The file used to list
      the averaged sections but sum up the raw ones, so the total did not match the rows.
      The raw figure is kept as an extra line for reference.----*/
+/*----Доля покрытия в процентах; на нулевой длине - ноль, а не деление на ноль.----*/
+static double coveredpercent(const folder_t* data)
+{
+    if(data->totdist <= 0.0) return 0.0;
+    return (data->covtotdist / data->totdist) * 100.0;
+}
+
+/*----Таблица участков без покрытия в csv: точка с запятой как разделитель, как и в
+     остальных выгрузках.----*/
+static void writecovtabcsv(const char* path, const folder_t* data, int with_raw, double raw_uncov)
+{
+    FILE* file = fopen(path, "w");
+
+    if(file == NULL)
+    {
+        perror(path);
+        printf("Or the file name is too long");
+        clean_stdin();
+        getchar();
+        exit(1);
+    }
+
+    fputs("длина участка, км;начало участка, широта;начало участка, долгота;"
+          "конец участка, широта;конец участка, долгота;\n", file);
+
+    for(u32 j = 0; j < data->reg_quantity; j++)
+    {
+        if(data->covreg[j].coverfl) continue;
+        fprintf(file, "%f;%f;%f;%f;%f\n", data->covreg[j].distance,
+                data->covreg[j].startlat, data->covreg[j].startlong,
+                data->covreg[j].endlat, data->covreg[j].endlong);
+    }
+
+    fprintf(file, "\nобщая длина маршрута;%f;\nс покрытием;%f;\nбез покрытия;%f;\n"
+                  "покрыто, %%;%.2f;\n",
+            data->totdist, data->covtotdist, data->uncovtotdist, coveredpercent(data));
+    if(with_raw) fprintf(file, "без покрытия, без сглаживания по расстоянию;%f;\n", raw_uncov);
+
+    fclose(file);
+}
+
+/*----Та же таблица для Word.  Внутри html с явной кодировкой: Word открывает такой файл
+     как документ с настоящей таблицей, а писать rtf или docx ради этого незачем.----*/
+static void writecovtabdoc(const char* path, const char* title, const folder_t* data,
+                           int with_raw, double raw_uncov)
+{
+    FILE* file = fopen(path, "w");
+
+    if(file == NULL)
+    {
+        perror(path);
+        printf("Or the file name is too long");
+        clean_stdin();
+        getchar();
+        exit(1);
+    }
+
+    fputs("<html><head><meta http-equiv=\"Content-Type\" "
+          "content=\"text/html; charset=windows-1251\"></head>\n"
+          "<body style=\"font-family: Calibri, sans-serif\">\n", file);
+    fputs("<h2>Участки без покрытия: ", file);
+    fputs(title, file);
+    fputs("</h2>\n", file);
+
+    fputs("<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">\n"
+          "<tr><th>длина участка, км</th>"
+          "<th>начало участка, широта</th><th>начало участка, долгота</th>"
+          "<th>конец участка, широта</th><th>конец участка, долгота</th></tr>\n", file);
+
+    for(u32 j = 0; j < data->reg_quantity; j++)
+    {
+        if(data->covreg[j].coverfl) continue;
+        fprintf(file, "<tr><td>%f</td><td>%f</td><td>%f</td><td>%f</td><td>%f</td></tr>\n",
+                data->covreg[j].distance, data->covreg[j].startlat, data->covreg[j].startlong,
+                data->covreg[j].endlat, data->covreg[j].endlong);
+    }
+    fputs("</table>\n", file);
+
+    fprintf(file, "<p>общая длина маршрута: %f км<br>\n"
+                  "с покрытием: %f км<br>\n"
+                  "без покрытия: %f км<br>\n"
+                  "<b>покрыто: %.2f %%</b>",
+            data->totdist, data->covtotdist, data->uncovtotdist, coveredpercent(data));
+    if(with_raw)
+        fprintf(file, "<br>\nбез покрытия, без сглаживания по расстоянию: %f км", raw_uncov);
+    fputs("</p>\n</body></html>\n", file);
+
+    fclose(file);
+}
+
+/*----Пишет обе таблицы разом: путь передаётся без расширения.----*/
+static void savecovtab(const char* path_without_extension, const char* title,
+                       const folder_t* data, int with_raw, double raw_uncov)
+{
+    char path[400];
+
+    strcpy(path, path_without_extension);
+    appendpath(path, sizeof(path), ".csv");
+    writecovtabcsv(path, data, with_raw, raw_uncov);
+
+    strcpy(path, path_without_extension);
+    appendpath(path, sizeof(path), ".doc");
+    writecovtabdoc(path, title, data, with_raw, raw_uncov);
+}
+
 void savecsvcovtab(char *filename, folder_t *folder, int folder_quantity, init_t settings)
 {
     char path[400];
@@ -326,8 +431,6 @@ void savecsvcovtab(char *filename, folder_t *folder, int folder_quantity, init_t
     {
         for(int i = 0; i < folder_quantity; i++)
         {
-            FILE* csvcovtab;
-
             if(strstr(folder[i].name, "GPS Data") != NULL) continue;
 
             strcpy(path, csv_output_dir);
@@ -335,66 +438,22 @@ void savecsvcovtab(char *filename, folder_t *folder, int folder_quantity, init_t
             appendpath(path, sizeof(path), filename);
             appendpath(path, sizeof(path), "_");
             appendpath(path, sizeof(path), folder[i].short_name);
-            appendpath(path, sizeof(path), ".csv");
 
-            csvcovtab = fopen(path, "w");
-            if(csvcovtab == NULL)
-            {
-                perror(path);
-                printf("Or the file name is too long");
-                clean_stdin();
-                getchar();
-                exit(1);
-            }
-            fprintf(csvcovtab, "distance;start latitude;start longitude;end latitude;end longitude;\n");
-            for(u32 j = 0; j < folder[i].reg_quantity; j++)
-            {
-                if(!folder[i].covreg[j].coverfl)
-                {
-                    fprintf(csvcovtab, "%f;%f;%f;%f;%f\n", folder[i].covreg[j].distance, folder[i].covreg[j].startlat,
-                    folder[i].covreg[j].startlong, folder[i].covreg[j].endlat, folder[i].covreg[j].endlong);
-                }
-            }
-            fprintf(csvcovtab, "\ntotal distance;%f;\ncovered distance;%f;\nuncovered distance;%f;\n",
-                    folder[i].totdist, folder[i].covtotdist, folder[i].uncovtotdist);
-            fclose(csvcovtab);
+            savecovtab(path, folder[i].short_name, &folder[i], 0, 0.0);
         }
     }
 
     if(settings.covercalctype == total)
     {
-        int   gps = gpsfolderindex(folder, folder_quantity);
-        int   avg = folder_quantity;
-        FILE* csvcovtab;
+        int gps = gpsfolderindex(folder, folder_quantity);
+        int avg = folder_quantity;
 
         if(gps < 0) gps = 0;
 
         strcpy(path, csv_output_dir);
         appendpath(path, sizeof(path), "Coverage_");
         appendpath(path, sizeof(path), filename);
-        appendpath(path, sizeof(path), ".csv");
 
-        csvcovtab = fopen(path, "w");
-        if(csvcovtab == NULL)
-        {
-            perror(path);
-            printf("Or the file name is too long");
-            clean_stdin();
-            getchar();
-            exit(1);
-        }
-        fprintf(csvcovtab, "distance;start latitude;start longitude;end latitude;end longitude;\n");
-        for(u32 j = 0; j < folder[avg].reg_quantity; j++)
-        {
-            if(!folder[avg].covreg[j].coverfl)
-            {
-                fprintf(csvcovtab, "%f;%f;%f;%f;%f\n", folder[avg].covreg[j].distance, folder[avg].covreg[j].startlat,
-                    folder[avg].covreg[j].startlong, folder[avg].covreg[j].endlat, folder[avg].covreg[j].endlong);
-            }
-        }
-        fprintf(csvcovtab, "\ntotal distance;%f;\ncovered distance;%f;\nuncovered distance;%f;\n",
-                folder[avg].totdist, folder[avg].covtotdist, folder[avg].uncovtotdist);
-        fprintf(csvcovtab, "uncovered distance without distance averaging;%f;\n", folder[gps].uncovtotdist);
-        fclose(csvcovtab);
+        savecovtab(path, filename, &folder[avg], 1, folder[gps].uncovtotdist);
     }
 }

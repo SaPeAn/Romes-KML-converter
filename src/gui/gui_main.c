@@ -35,6 +35,8 @@
 #define IDC_PATH            1001
 #define IDC_OPEN_KML        1002
 #define IDC_OPEN_CSV        1003
+#define IDC_OUT_PATH        1004
+#define IDC_CHOOSE_OUT      1005
 #define IDC_FILLIN          1010
 #define IDC_GSM             1011
 #define IDC_UMTS            1012
@@ -56,6 +58,8 @@
 #define IDC_REPORT          1037
 #define IDC_MAP             1038
 #define IDC_ABOUT           1039
+#define IDC_ELEMENTS        1040
+#define IDC_SELECT_ALL      1041
 #define IDC_LBL_FILE        1100
 #define IDC_GRP_SETTINGS    1101
 #define IDC_GRP_ACTIONS     1102
@@ -67,11 +71,14 @@
 #define IDC_LBL_MAXSKIP     1108
 #define IDC_GRP_SMOOTH      1110
 #define IDC_LBL_LOG         1109
+#define IDC_LBL_OUT         1111
+#define IDC_LBL_ELEMENTS    1112
 
 #define TIMER_POLL          1
 #define SETTINGS_HEIGHT     216
 #define TOP_ROW_HEIGHT      34
-#define LOG_HEIGHT          118
+#define LOG_HEIGHT          96
+#define ELEMENTS_HEIGHT     110
 
 static HINSTANCE  instance;
 static HWND       main_window;
@@ -213,7 +220,6 @@ static void choose_source(SOURCE_TYPE type)
 #define TABLE_FIXED_COLUMNS  4
 
 static int table_level_folder[MAX_FOLDERS];   /* level column -> index of its folder */
-static int table_level_folder[MAX_FOLDERS];   /* level column -> index of its folder */
 static int table_level_count = 0;
 static int table_track_folder = 0;            /* folder the shared columns are read from */
 static int folder_selected[MAX_FOLDERS];      /* ticked in the header, used by the analysis */
@@ -244,39 +250,65 @@ static void update_selection_info(void)
     set_text(IDC_TABLE_INFO, info);
 }
 
-/*----The tick box lives in the column header, so the folder is chosen right where its
-     levels are shown.  It needs HDS_CHECKBOXES on the header control itself.----*/
-static void table_mark_column(HWND header, int column, int checked)
+/*----Элементы выбираются в отдельном списке с галочками между логом и таблицей.  Раньше
+     галочки жили в заголовках колонок таблицы: они терялись из виду при горизонтальной
+     прокрутке и ловились сабклассом.----*/
+static int elements_updating = 0;    /* пока список заполняем сами, уведомления не слушаем */
+
+static void elements_build(void)
 {
-    HDITEMA item;
+    HWND      list = GetDlgItem(main_window, IDC_ELEMENTS);
+    LVITEMA   item;
+    int       i;
+
+    SendMessage(list, WM_SETREDRAW, FALSE, 0);
+    SendMessage(list, LVM_DELETEALLITEMS, 0, 0);
+    elements_updating = 1;
 
     memset(&item, 0, sizeof(item));
-    item.mask = HDI_FORMAT;
-    SendMessage(header, HDM_GETITEMA, column, (LPARAM)&item);
-    item.fmt |= HDF_CHECKBOX;
-    if(checked) item.fmt |= HDF_CHECKED;
-    else        item.fmt &= ~HDF_CHECKED;
-    SendMessage(header, HDM_SETITEMA, column, (LPARAM)&item);
+    item.mask = LVIF_TEXT;
+    for(i = 0; i < table_level_count; i++)
+    {
+        item.iItem    = i;
+        item.iSubItem = 0;
+        item.pszText  = (char*)app_result_folder_fullname(table_level_folder[i]);
+        SendMessage(list, LVM_INSERTITEMA, 0, (LPARAM)&item);
+        ListView_SetCheckState(list, i, folder_selected[table_level_folder[i]] ? TRUE : FALSE);
+    }
+
+    elements_updating = 0;
+    SendMessage(list, WM_SETREDRAW, TRUE, 0);
+    InvalidateRect(list, NULL, TRUE);
+    CheckDlgButton(main_window, IDC_SELECT_ALL,
+                   (table_level_count > 0) ? BST_CHECKED : BST_UNCHECKED);
 }
 
-static void table_toggle_column(int column)
+/*----Галочки списка - единственный источник правды о выборе; отсюда он и читается.----*/
+static void elements_sync_from_list(void)
 {
-    HWND    table  = GetDlgItem(main_window, IDC_TABLE);
-    HWND    header = (HWND)SendMessage(table, LVM_GETHEADER, 0, 0);
-    HDITEMA item;
-    int     level = column - TABLE_FIXED_COLUMNS;
-    int     checked;
+    HWND list = GetDlgItem(main_window, IDC_ELEMENTS);
+    int  all = (table_level_count > 0);
+    int  i;
 
-    if((level < 0) || (level >= table_level_count)) return;
+    for(i = 0; i < table_level_count; i++)
+    {
+        int checked = ListView_GetCheckState(list, i) ? 1 : 0;
+        folder_selected[table_level_folder[i]] = checked;
+        if(!checked) all = 0;
+    }
 
-    memset(&item, 0, sizeof(item));
-    item.mask = HDI_FORMAT;
-    SendMessage(header, HDM_GETITEMA, column, (LPARAM)&item);
-    checked = (item.fmt & HDF_CHECKED) ? 0 : 1;      /* the click inverts the box */
-    table_mark_column(header, column, checked);
-
-    folder_selected[table_level_folder[level]] = checked;
+    CheckDlgButton(main_window, IDC_SELECT_ALL, all ? BST_CHECKED : BST_UNCHECKED);
     update_selection_info();
+}
+
+static void elements_set_all(int checked)
+{
+    HWND list = GetDlgItem(main_window, IDC_ELEMENTS);
+    int  i;
+
+    for(i = 0; i < table_level_count; i++)
+        ListView_SetCheckState(list, i, checked ? TRUE : FALSE);
+    elements_sync_from_list();
 }
 
 static void table_build(void)
@@ -285,7 +317,6 @@ static void table_build(void)
     static const int   fixed_widths[TABLE_FIXED_COLUMNS] = {60, 100, 115, 115};
 
     HWND      table = GetDlgItem(main_window, IDC_TABLE);
-    HWND      header;
     LVCOLUMNA column;
     int       folders = app_result_folders();
     int       track = app_result_gps_folder();
@@ -324,17 +355,14 @@ static void table_build(void)
         table_columns++;
     }
 
-    header = (HWND)SendMessage(table, LVM_GETHEADER, 0, 0);
-    SetWindowLongPtr(header, GWL_STYLE, GetWindowLongPtr(header, GWL_STYLE) | HDS_CHECKBOXES);
-    for(i = 0; i < table_level_count; i++)
-        table_mark_column(header, TABLE_FIXED_COLUMNS + i, 1);
-
     SendMessage(table, LVM_SETITEMCOUNT, (WPARAM)app_result_rows(), 0);
     SendMessage(table, WM_SETREDRAW, TRUE, 0);
     InvalidateRect(table, NULL, TRUE);
 
+    elements_build();
     update_selection_info();
 }
+
 /*----The list view is virtual: it asks for a cell only when it needs to draw it.----*/
 static void table_supply_cell(NMLVDISPINFOA* info)
 {
@@ -413,6 +441,8 @@ static void start_import(void)
     table_clear_columns(GetDlgItem(main_window, IDC_TABLE));
     SendMessage(GetDlgItem(main_window, IDC_TABLE), LVM_SETITEMCOUNT, 0, 0);
     table_level_count = 0;
+    SendMessage(GetDlgItem(main_window, IDC_ELEMENTS), LVM_DELETEALLITEMS, 0, 0);
+    CheckDlgButton(main_window, IDC_SELECT_ALL, BST_UNCHECKED);
     set_text(IDC_TABLE_INFO, "Таблица данных: чтение файла...");
     EnableWindow(GetDlgItem(main_window, IDC_ANALYSE), FALSE);
     EnableWindow(GetDlgItem(main_window, IDC_REPORT), FALSE);
@@ -475,6 +505,7 @@ static int choose_result_folder(void)
         result_folder[sizeof(result_folder) - 1] = 0;
     }
     CoTaskMemFree(chosen);
+    if(result_folder[0] != 0) set_text(IDC_OUT_PATH, result_folder);
     return (result_folder[0] != 0);
 }
 
@@ -501,18 +532,22 @@ static void start_analysis(void)
         if(folder_selected[table_level_folder[i]]) chosen++;
     if(chosen == 0)
     {
-        MessageBoxA(main_window, "Отметьте галочками хотя бы один элемент в заголовке таблицы.",
+        MessageBoxA(main_window, "Отметьте галочками хотя бы один элемент в списке.",
                     APP_TITLE, MB_ICONINFORMATION | MB_OK);
         return;
     }
-
-    /* A run started from the command line must not stop on a dialog: it saves the results
-       next to the source file. */
-    if(auto_analyse) folder_of(source_path, result_folder, sizeof(result_folder));
-    else if(!choose_result_folder())
+    /* Папка спрашивается только если её ещё не выбрали: выбранная держится до конца
+       сеанса, и повторные расчёты идут без вопросов.  Запуск из командной строки не может
+       останавливаться на диалоге - он пишет рядом с исходным файлом. */
+    if(result_folder[0] == 0)
     {
-        set_text(IDC_STATUS, "Расчёт отменён: папка для результатов не выбрана");
-        return;
+        if(auto_analyse) folder_of(source_path, result_folder, sizeof(result_folder));
+        else if(!choose_result_folder())
+        {
+            set_text(IDC_STATUS, "Расчёт отменён: папка для результатов не выбрана");
+            return;
+        }
+        set_text(IDC_OUT_PATH, result_folder);
     }
 
     controls_to_settings();
@@ -584,25 +619,6 @@ static void job_finished(void)
     }
 }
 
-/*----Notifications of the header belong to the list view, not to this window, so the
-     list view is subclassed to catch the click on a tick box.----*/
-static LRESULT CALLBACK table_subclass(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
-                                       UINT_PTR id, DWORD_PTR reference)
-{
-    (void)id; (void)reference;
-
-    if(message == WM_NOTIFY)
-    {
-        NMHEADERA* header_note = (NMHEADERA*)lparam;
-        if(header_note->hdr.code == HDN_ITEMSTATEICONCLICK)   /* MinGW knows no A/W flavours here */
-        {
-            table_toggle_column(header_note->iItem);
-            return 0;
-        }
-    }
-    return DefSubclassProc(window, message, wparam, lparam);
-}
-
 /*=========================== Controls and layout =============================*/
 
 static void create_controls(void)
@@ -611,6 +627,10 @@ static void create_controls(void)
     add_control("EDIT",   "файл не выбран", ES_LEFT | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, IDC_PATH);
     add_control("BUTTON", "Открыть kml...", BS_PUSHBUTTON | WS_TABSTOP, IDC_OPEN_KML);
     add_control("BUTTON", "Открыть csv...", BS_PUSHBUTTON | WS_TABSTOP, IDC_OPEN_CSV);
+
+    add_control("STATIC", "Папка результатов:", SS_RIGHT | SS_CENTERIMAGE, IDC_LBL_OUT);
+    add_control("EDIT",   "папка не выбрана", ES_LEFT | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, IDC_OUT_PATH);
+    add_control("BUTTON", "Выбрать папку результатов...", BS_PUSHBUTTON | WS_TABSTOP, IDC_CHOOSE_OUT);
 
     add_control("BUTTON", "Параметры расчёта", BS_GROUPBOX, IDC_GRP_SETTINGS);
     add_control("BUTTON", "Автозаполнение пустых точек (filflag)", BS_AUTOCHECKBOX | WS_TABSTOP, IDC_FILLIN);
@@ -647,13 +667,29 @@ static void create_controls(void)
 
     add_control("STATIC", "Ход работы:", SS_LEFT | SS_CENTERIMAGE, IDC_LBL_LOG);
     add_control("EDIT", "", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_BORDER, IDC_LOG);
+
+    add_control("STATIC", "Элементы для расчёта:", SS_LEFT | SS_CENTERIMAGE, IDC_LBL_ELEMENTS);
+    add_control("BUTTON", "Выбрать все", BS_AUTOCHECKBOX | WS_TABSTOP, IDC_SELECT_ALL);
+    add_control(WC_LISTVIEWA, "", LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP,
+                IDC_ELEMENTS);
+    SendMessage(GetDlgItem(main_window, IDC_ELEMENTS), LVM_SETEXTENDEDLISTVIEWSTYLE,
+                LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER,
+                LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    {
+        LVCOLUMNA column;
+        memset(&column, 0, sizeof(column));
+        column.mask     = LVCF_WIDTH | LVCF_SUBITEM;
+        column.iSubItem = 0;
+        column.cx       = 600;
+        SendMessage(GetDlgItem(main_window, IDC_ELEMENTS), LVM_INSERTCOLUMNA, 0, (LPARAM)&column);
+    }
+
     add_control("STATIC", "Таблица данных: нет данных", SS_LEFT | SS_CENTERIMAGE, IDC_TABLE_INFO);
 
     add_control(WC_LISTVIEWA, "", LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, IDC_TABLE);
     SendMessage(GetDlgItem(main_window, IDC_TABLE), LVM_SETEXTENDEDLISTVIEWSTYLE,
                 LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER,
                 LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
-    SetWindowSubclass(GetDlgItem(main_window, IDC_TABLE), table_subclass, 1, 0);   /* to catch the header tick boxes */
 }
 
 static void place(int id, int x, int y, int width, int height)
@@ -662,7 +698,8 @@ static void place(int id, int x, int y, int width, int height)
     if(control != NULL) MoveWindow(control, x, y, width, height, TRUE);
 }
 
-/*----The settings block keeps its size; the log and the table take what is left.----*/
+/*----Два верхних поля - исходный файл и папка результатов - на всю ширину; блок настроек
+     держит свой размер, а лог, список элементов и таблица делят остаток.----*/
 static void layout(int width, int height)
 {
     const int left = 12;
@@ -670,8 +707,8 @@ static void layout(int width, int height)
     int actions_x = left + settings_width + 12;
     int actions_width = width - actions_x - left;
     int half_button;
-    int y_block = 12 + TOP_ROW_HEIGHT;
-    int y_log, y_table, row;
+    int y_block = 12 + 2 * TOP_ROW_HEIGHT;
+    int y_log, y_elements, y_table, row;
 
     if(actions_width < 250) actions_width = 250;
     half_button = (actions_width - 40) / 2;
@@ -680,6 +717,10 @@ static void layout(int width, int height)
     place(IDC_PATH,     left + 110, 12, width - left - 110 - 248, 24);
     place(IDC_OPEN_KML, width - 244, 11, 112, 26);
     place(IDC_OPEN_CSV, width - 126, 11, 112, 26);
+
+    place(IDC_LBL_OUT,    left, 12 + TOP_ROW_HEIGHT, 104, 24);
+    place(IDC_OUT_PATH,   left + 110, 12 + TOP_ROW_HEIGHT, width - left - 110 - 248, 24);
+    place(IDC_CHOOSE_OUT, width - 244, 11 + TOP_ROW_HEIGHT, 230, 26);
 
     place(IDC_GRP_SETTINGS, left, y_block, settings_width, SETTINGS_HEIGHT);
     place(IDC_GRP_ACTIONS,  actions_x, y_block, actions_width, SETTINGS_HEIGHT);
@@ -721,7 +762,14 @@ static void layout(int width, int height)
     place(IDC_LBL_LOG, left, y_log, 200, 18);
     place(IDC_LOG, left, y_log + 20, width - 2 * left, LOG_HEIGHT);
 
-    y_table = y_log + 20 + LOG_HEIGHT + 10;
+    y_elements = y_log + 20 + LOG_HEIGHT + 10;
+    place(IDC_LBL_ELEMENTS, left, y_elements, 170, 20);
+    place(IDC_SELECT_ALL,   left + 186, y_elements, 130, 20);
+    place(IDC_ELEMENTS, left, y_elements + 22, width - 2 * left, ELEMENTS_HEIGHT);
+    SendMessage(GetDlgItem(main_window, IDC_ELEMENTS), LVM_SETCOLUMNWIDTH, 0,
+                (LPARAM)(width - 2 * left - 24));
+
+    y_table = y_elements + 22 + ELEMENTS_HEIGHT + 10;
     place(IDC_TABLE_INFO, left, y_table, width - 2 * left, 20);
     place(IDC_TABLE, left, y_table + 22, width - 2 * left, height - y_table - 34);
 }
@@ -748,7 +796,7 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
 
     case WM_GETMINMAXINFO:
         ((MINMAXINFO*)lparam)->ptMinTrackSize.x = 1010;
-        ((MINMAXINFO*)lparam)->ptMinTrackSize.y = 640;
+        ((MINMAXINFO*)lparam)->ptMinTrackSize.y = 780;
         return 0;
 
     case WM_COMMAND:
@@ -760,6 +808,10 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         case IDC_REPORT:   open_report();             return 0;
         case IDC_MAP:      map_view_open(instance, main_window); return 0;
         case IDC_ABOUT:    about_show(instance, main_window);     return 0;
+        case IDC_CHOOSE_OUT: choose_result_folder(); return 0;
+        case IDC_SELECT_ALL:
+            elements_set_all(IsDlgButtonChecked(main_window, IDC_SELECT_ALL) == BST_CHECKED);
+            return 0;
         case IDC_SAVE_SETTINGS:
             controls_to_settings();
             if(app_settings_save(settings_path, &settings))
@@ -777,6 +829,19 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             if(((NMHDR*)lparam)->code == LVN_GETDISPINFOA)
             {
                 table_supply_cell((NMLVDISPINFOA*)lparam);
+                return 0;
+            }
+        }
+        if(((NMHDR*)lparam)->idFrom == IDC_ELEMENTS)
+        {
+            NMLISTVIEW* note = (NMLISTVIEW*)lparam;
+
+            /* галочка меняет состояние картинки состояния, а не выделение строки */
+            if(!elements_updating && (note->hdr.code == LVN_ITEMCHANGED)
+               && ((note->uChanged & LVIF_STATE) != 0)
+               && (((note->uOldState ^ note->uNewState) & LVIS_STATEIMAGEMASK) != 0))
+            {
+                elements_sync_from_list();
                 return 0;
             }
         }
@@ -863,7 +928,7 @@ int main(int argc, char** argv)
     }
 
     main_window = CreateWindowExA(0, window_class.lpszClassName, APP_TITLE,
-                                 WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1280, 820,
+                                 WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1280, 900,
                                  NULL, NULL, instance, NULL);
     if(main_window == NULL)
     {
