@@ -1,3 +1,31 @@
 #include <windows.h>
+
 1 RT_MANIFEST "app.manifest"
 101 ICON "icon.ico"
+
+/* Shown by Explorer in the properties of the exe: who wrote it and on what terms. */
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION    1,0,0,0
+PRODUCTVERSION 1,0,0,0
+FILEOS         VOS_NT_WINDOWS32
+FILETYPE       VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041904E3"
+        BEGIN
+            VALUE "CompanyName",      "П. А. Самсонов"
+            VALUE "FileDescription",  "RomesCov - покрытие автодорог по kml-логам Romes"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "InternalName",     "RomesCov"
+            VALUE "OriginalFilename", "RomesCov.exe"
+            VALUE "ProductName",      "RomesCov"
+            VALUE "ProductVersion",   "1.0"
+            VALUE "LegalCopyright",   "(c) 2025-2026 П. А. Самсонов. Предоставляется КАК ЕСТЬ, без гарантий."
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x419, 1251
+    END
+END

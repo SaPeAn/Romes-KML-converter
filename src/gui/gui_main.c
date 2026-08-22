@@ -27,6 +27,7 @@
 
 #include "app_core.h"
 #include "map_view.h"
+#include "about.h"
 #include "resource.h"
 
 #define APP_TITLE "RomesCov"
@@ -54,6 +55,7 @@
 #define IDC_TABLE_INFO      1036
 #define IDC_REPORT          1037
 #define IDC_MAP             1038
+#define IDC_ABOUT           1039
 #define IDC_LBL_FILE        1100
 #define IDC_GRP_SETTINGS    1101
 #define IDC_GRP_ACTIONS     1102
@@ -639,6 +641,7 @@ static void create_controls(void)
     add_control("BUTTON", "Открыть HTML-отчёт", BS_PUSHBUTTON | WS_TABSTOP, IDC_REPORT);
     add_control("BUTTON", "Карта покрытия", BS_PUSHBUTTON | WS_TABSTOP, IDC_MAP);
     add_control("BUTTON", "Сохранить настройки", BS_PUSHBUTTON | WS_TABSTOP, IDC_SAVE_SETTINGS);
+    add_control("BUTTON", "О программе", BS_PUSHBUTTON | WS_TABSTOP, IDC_ABOUT);
     add_control(PROGRESS_CLASSA, "", 0, IDC_PROGRESS);
     add_control("STATIC", "", SS_LEFT | SS_CENTERIMAGE | SS_ENDELLIPSIS, IDC_STATUS);
 
@@ -666,10 +669,12 @@ static void layout(int width, int height)
     const int settings_width = 640;
     int actions_x = left + settings_width + 12;
     int actions_width = width - actions_x - left;
+    int half_button;
     int y_block = 12 + TOP_ROW_HEIGHT;
     int y_log, y_table, row;
 
     if(actions_width < 250) actions_width = 250;
+    half_button = (actions_width - 40) / 2;
 
     place(IDC_LBL_FILE, left, 12, 104, 24);
     place(IDC_PATH,     left + 110, 12, width - left - 110 - 248, 24);
@@ -707,7 +712,8 @@ static void layout(int width, int height)
     place(IDC_ANALYSE,       actions_x + 16, y_block + 20,  actions_width - 32, 34);
     place(IDC_REPORT,        actions_x + 16, y_block + 58,  actions_width - 32, 28);
     place(IDC_MAP,           actions_x + 16, y_block + 90,  actions_width - 32, 28);
-    place(IDC_SAVE_SETTINGS, actions_x + 16, y_block + 122, actions_width - 32, 26);
+    place(IDC_SAVE_SETTINGS, actions_x + 16, y_block + 122, half_button, 26);
+    place(IDC_ABOUT,         actions_x + 24 + half_button, y_block + 122, half_button, 26);
     place(IDC_PROGRESS,      actions_x + 16, y_block + SETTINGS_HEIGHT - 62, actions_width - 32, 16);
     place(IDC_STATUS,        actions_x + 16, y_block + SETTINGS_HEIGHT - 42, actions_width - 32, 32);
 
@@ -753,6 +759,7 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         case IDC_ANALYSE:  start_analysis();          return 0;
         case IDC_REPORT:   open_report();             return 0;
         case IDC_MAP:      map_view_open(instance, main_window); return 0;
+        case IDC_ABOUT:    about_show(instance, main_window);     return 0;
         case IDC_SAVE_SETTINGS:
             controls_to_settings();
             if(app_settings_save(settings_path, &settings))
@@ -886,7 +893,8 @@ int main(int argc, char** argv)
     {
         /* keys of the map window must not be swallowed by the dialog navigation */
         HWND root = GetAncestor(message.hwnd, GA_ROOT);
-        if((root == map_view_hwnd()) || !IsDialogMessage(main_window, &message))
+        if((root == map_view_hwnd()) || (root == about_hwnd())
+           || !IsDialogMessage(main_window, &message))
         {
             TranslateMessage(&message);
             DispatchMessage(&message);
