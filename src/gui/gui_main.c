@@ -175,7 +175,7 @@ static void controls_to_settings(void)
     GetWindowTextA(GetDlgItem(main_window, IDC_DEPTH), text, sizeof(text) - 1);
     settings.avgdepth = atoi(text);
     if(settings.avgdepth > 100) settings.avgdepth = 100;
-    if(settings.avgdepth < 2)   settings.avgdepth = 2;
+    if(settings.avgdepth < 1)   settings.avgdepth = 1;    /* 1 - без усреднения */
 
     settings.maxskipdist = get_double(IDC_MAXSKIP, settings.maxskipdist);
     if(settings.maxskipdist < 0.0) settings.maxskipdist = 0.0;
@@ -713,13 +713,13 @@ static void layout(int width, int height)
     if(actions_width < 250) actions_width = 250;
     half_button = (actions_width - 40) / 2;
 
-    place(IDC_LBL_FILE, left, 12, 104, 24);
-    place(IDC_PATH,     left + 110, 12, width - left - 110 - 248, 24);
+    place(IDC_LBL_FILE, left, 12, 130, 24);
+    place(IDC_PATH,     left + 136, 12, width - left - 136 - 248, 24);
     place(IDC_OPEN_KML, width - 244, 11, 112, 26);
     place(IDC_OPEN_CSV, width - 126, 11, 112, 26);
 
-    place(IDC_LBL_OUT,    left, 12 + TOP_ROW_HEIGHT, 104, 24);
-    place(IDC_OUT_PATH,   left + 110, 12 + TOP_ROW_HEIGHT, width - left - 110 - 248, 24);
+    place(IDC_LBL_OUT,    left, 12 + TOP_ROW_HEIGHT, 130, 24);
+    place(IDC_OUT_PATH,   left + 136, 12 + TOP_ROW_HEIGHT, width - left - 136 - 248, 24);
     place(IDC_CHOOSE_OUT, width - 244, 11 + TOP_ROW_HEIGHT, 230, 26);
 
     place(IDC_GRP_SETTINGS, left, y_block, settings_width, SETTINGS_HEIGHT);

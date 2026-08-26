@@ -335,7 +335,7 @@ void getaverlvl(folder_t* folder, int folder_quantity, int averageingdepth, AVG_
 {
 	double tmp[110];
 	int halfdepth = averageingdepth / 2;
-	if(halfdepth < 1)  halfdepth = 1;    // the window always holds at least 2 points
+	/* halfdepth == 0 means no averaging at all: the point keeps its own level */
 	if(halfdepth > 50) halfdepth = 50;   // tmp[] holds no more than 2 * 50 points
 
 	for(int i = 0; i < folder_quantity; i++)
@@ -346,8 +346,8 @@ void getaverlvl(folder_t* folder, int folder_quantity, int averageingdepth, AVG_
 			/* The window is clamped to the array bounds. Without clamping a track shorter
 			   than the averaging depth was read beyond the end of placemark_arr, and on
 			   short tracks the "head" and the "tail" branches used to run both at once. */
-			int lo = j - halfdepth;
-			int hi = j + halfdepth;
+			int lo = (halfdepth > 0) ? (j - halfdepth) : j;
+			int hi = (halfdepth > 0) ? (j + halfdepth) : (j + 1);
 			int used = 0;
 			if(lo < 0) lo = 0;
 			if(hi > quantity) hi = quantity;

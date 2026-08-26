@@ -143,7 +143,7 @@ init_t initialization(void)
     }
     fclose(set_file);
     if(settings.avgdepth > 100) {settings.avgdepth = 100;}
-    if(settings.avgdepth < 2) {settings.avgdepth = 2;}
+    if(settings.avgdepth < 1) {settings.avgdepth = 1;}   /* 1 - без усреднения */
     if(settings.maxskipdist < 0.0) {settings.maxskipdist = 0.0;}
     if((settings.fillinflag < 0) || (settings.fillinflag > 1)) {settings.fillinflag = 1;}
     return settings;

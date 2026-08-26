@@ -179,7 +179,7 @@ int app_settings_load(const char* path, init_t* settings)
     else settings->avgtype = median;
 
     if(settings->avgdepth > 100) settings->avgdepth = 100;
-    if(settings->avgdepth < 2)   settings->avgdepth = 2;
+    if(settings->avgdepth < 1)   settings->avgdepth = 1;   /* 1 - без усреднения */
     if((settings->fillinflag < 0) || (settings->fillinflag > 1)) settings->fillinflag = 1;
     if(settings->maxskipdist < 0.0) settings->maxskipdist = 0.0;
 
@@ -428,7 +428,7 @@ static void run_import(void)
     result_valid = 1;
     job_step(1.0f, "Данные загружены");
     app_log("\nЗагружено точек: %u, элементов: %d\n", result_row_count, result_folder_quantity);
-    app_log("Отметьте элементы галочками в заголовке таблицы и нажмите расчёт покрытия.\n");
+    app_log("Отметьте элементы галочками в списке и нажмите расчёт покрытия.\n");
 }
 
 /*----Step two: everything the console version did after reading the csv, but only for the
