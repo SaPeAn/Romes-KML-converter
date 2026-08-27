@@ -143,9 +143,9 @@ void app_settings_defaults(init_t* settings)
     settings->LTEcoveragelvl  = -83.5;
     settings->defaultcovlvl   = -85.0;
     settings->covercalctype   = total;
-    settings->avgtype         = median;
-    settings->avgdepth        = 25;
-    settings->maxskipdist     = 0.1;
+    settings->avgtype         = sma;
+    settings->avgdepth        = 1;      /* 1 - без усреднени€ уровн€ */
+    settings->maxskipdist     = 0.0;    /* 0 - без сглаживани€ покрыти€ */
 }
 
 int app_settings_load(const char* path, init_t* settings)

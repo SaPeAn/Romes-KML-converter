@@ -648,8 +648,8 @@ static void create_controls(void)
     add_control("BUTTON", "По элементам (SEP)",          BS_AUTORADIOBUTTON, IDC_CALC_SEP);
 
     add_control("BUTTON", "Сглаживание", BS_GROUPBOX | WS_GROUP, IDC_GRP_SMOOTH);
-    add_control("BUTTON", "Медиана (MED)",            BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, IDC_AVG_MED);
-    add_control("BUTTON", "Скользящее среднее (SMA)", BS_AUTORADIOBUTTON, IDC_AVG_SMA);
+    add_control("BUTTON", "Скользящее среднее (SMA)", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, IDC_AVG_SMA);
+    add_control("BUTTON", "Медиана (MED)",            BS_AUTORADIOBUTTON, IDC_AVG_MED);
 
     add_control("STATIC", "Точек усреднения уровня:",   SS_RIGHT | SS_CENTERIMAGE, IDC_LBL_DEPTH);
     add_control("EDIT",   "", ES_LEFT | ES_NUMBER | WS_BORDER | WS_TABSTOP, IDC_DEPTH);
@@ -743,8 +743,8 @@ static void layout(int width, int height)
 
     row += 30;                                            /* frame of the smoothing block */
     place(IDC_GRP_SMOOTH,  left + 8,   row, settings_width - 16, 78);
-    place(IDC_AVG_MED,     left + 16,  row + 20, 200, 22);
-    place(IDC_AVG_SMA,     left + 260, row + 20, 240, 22);
+    place(IDC_AVG_SMA,     left + 16,  row + 20, 240, 22);
+    place(IDC_AVG_MED,     left + 260, row + 20, 200, 22);
     place(IDC_LBL_DEPTH,   left + 16,  row + 46, 168, 22);
     place(IDC_DEPTH,       left + 188, row + 46, 60,  22);
     place(IDC_LBL_MAXSKIP, left + 256, row + 46, 156, 22);
