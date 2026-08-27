@@ -30,6 +30,7 @@
 #define SCALE_MIN        0.15              /* pixels in a degree: the whole world at once */
 #define SCALE_MAX        6000000.0         /* about two centimetres in a pixel */
 #define LINE_HEIGHT      18
+#define AVG_OFFSET       8.0               /* на сколько пикселей сглаженная линия уходит вбок */
 
 #define LAYER_TRACK      0
 #define LAYER_RAW_GAP    1
@@ -82,6 +83,10 @@ static int          cache_valid;
 static double*      device_x;
 static double*      device_y;
 
+/*----Те же точки, сдвинутые вбок: по ним рисуется сглаженное покрытие----*/
+static double*      offset_x;
+static double*      offset_y;
+
 /*============================ Data taken from app_core =======================*/
 
 static void release_points(void)
@@ -89,6 +94,8 @@ static void release_points(void)
     free(points);   points   = NULL;
     free(device_x); device_x = NULL;
     free(device_y); device_y = NULL;
+    free(offset_x); offset_x = NULL;
+    free(offset_y); offset_y = NULL;
     point_count = 0;
 }
 
@@ -122,7 +129,10 @@ static int collect_points(void)
     points   = (map_point_t*)malloc(sizeof(map_point_t) * track->placemark_quantity);
     device_x = (double*)malloc(sizeof(double) * track->placemark_quantity);
     device_y = (double*)malloc(sizeof(double) * track->placemark_quantity);
-    if((points == NULL) || (device_x == NULL) || (device_y == NULL))
+    offset_x = (double*)malloc(sizeof(double) * track->placemark_quantity);
+    offset_y = (double*)malloc(sizeof(double) * track->placemark_quantity);
+    if((points == NULL) || (device_x == NULL) || (device_y == NULL)
+       || (offset_x == NULL) || (offset_y == NULL))
     {
         release_points();
         return 0;
@@ -299,10 +309,51 @@ static int segment_in_layer(int layer, int j)
     }
 }
 
+/*----Сглаженное покрытие идёт не поверх трека, а рядом с ним: линия сдвигается по нормали
+     к направлению трека на несколько пикселей.  Нормаль считается по соседним точкам, а не
+     по одному отрезку, поэтому сдвинутая линия остаётся связной на поворотах.  Соседи
+     ищутся вширь, пока не разойдутся хотя бы на полпикселя: на дальнем зуме соседние точки
+     попадают в один пиксель, и без этого сдвиг начинал бы дёргаться.----*/
+static void compute_offsets(void)
+{
+    int j;
+
+    for(j = 0; j < point_count; j++)
+    {
+        double dx = 0.0;
+        double dy = 0.0;
+        double length = 0.0;
+        int    step;
+
+        for(step = 1; step <= 16; step++)
+        {
+            int a = ((j - step) >= 0) ? (j - step) : 0;
+            int b = ((j + step) < point_count) ? (j + step) : (point_count - 1);
+
+            dx = device_x[b] - device_x[a];
+            dy = device_y[b] - device_y[a];
+            length = sqrt(dx * dx + dy * dy);
+            if(length > 0.5) break;
+        }
+
+        if(length < 1e-9)
+        {
+            offset_x[j] = device_x[j];
+            offset_y[j] = device_y[j];
+            continue;
+        }
+
+        offset_x[j] = device_x[j] - (dy / length) * AVG_OFFSET;
+        offset_y[j] = device_y[j] + (dx / length) * AVG_OFFSET;
+    }
+}
+
 /*----Draws one layer, skipping points that fall on the pixel the pen already stands on.
      At a world-wide zoom this turns seventeen thousand segments into a few dozen.----*/
 static void draw_layer(HDC dc, int layer, int width, int height)
 {
+    const double* line_x = (layer == LAYER_AVG_GAP) ? offset_x : device_x;
+    const double* line_y = (layer == LAYER_AVG_GAP) ? offset_y : device_y;
     double last_x = 0.0;
     double last_y = 0.0;
     int    in_run = 0;
@@ -316,17 +367,17 @@ static void draw_layer(HDC dc, int layer, int width, int height)
 
         if(!in_run)
         {
-            last_x = device_x[j - 1];
-            last_y = device_y[j - 1];
+            last_x = line_x[j - 1];
+            last_y = line_y[j - 1];
             in_run = 1;
         }
 
         run_ends = (j == point_count - 1) || !segment_in_layer(layer, j + 1);
-        if(run_ends || (fabs(device_x[j] - last_x) >= 1.0) || (fabs(device_y[j] - last_y) >= 1.0))
+        if(run_ends || (fabs(line_x[j] - last_x) >= 1.0) || (fabs(line_y[j] - last_y) >= 1.0))
         {
-            draw_clipped(dc, last_x, last_y, device_x[j], device_y[j], width, height);
-            last_x = device_x[j];
-            last_y = device_y[j];
+            draw_clipped(dc, last_x, last_y, line_x[j], line_y[j], width, height);
+            last_x = line_x[j];
+            last_y = line_y[j];
         }
     }
 }
@@ -430,6 +481,7 @@ static void draw_map(HDC dc, int width, int height)
     for(j = 0; j < point_count; j++)
         geo_to_device(points[j].latitude, points[j].longitude, width, height,
                       &device_x[j], &device_y[j]);
+    compute_offsets();
 
     pen = CreatePen(PS_SOLID, 3, RGB(40, 140, 90));            /* the track itself */
     old_pen = (HPEN)SelectObject(dc, pen);
@@ -527,8 +579,8 @@ static void draw_legend(HDC dc)
     TextOutA(dc, x + 12, line + 1, text, (int)strlen(text));
     line += LINE_HEIGHT;
 
-    TextOutA(dc, x + 12, line + 1, "красный без оранжевого - провал, убранный сглаживанием",
-             (int)strlen("красный без оранжевого - провал, убранный сглаживанием"));
+    TextOutA(dc, x + 12, line + 1, "оранжевая идёт рядом с треком; красный без неё - убрано сглаживанием",
+             (int)strlen("оранжевая идёт рядом с треком; красный без неё - убрано сглаживанием"));
 }
 
 static double nice_distance(double metres)
